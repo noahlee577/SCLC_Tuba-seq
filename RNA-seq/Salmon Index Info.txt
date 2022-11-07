@@ -1,0 +1,5 @@
+Aliases: mm10_cdna
+Digest: fa159612d40b1bedea9a279eb24999b3d27145f9dd70dcca
+Description: The GRCm38 cDNA reference sequence from Ensembl
+
+Obtained from http://refgenomes.databio.org/v3/genomes/splash/fa159612d40b1bedea9a279eb24999b3d27145f9dd70dcca

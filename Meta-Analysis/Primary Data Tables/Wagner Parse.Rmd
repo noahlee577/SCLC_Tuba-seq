@@ -1,0 +1,61 @@
+---
+title: "Zhou_Parse"
+author: "Myung Chang Lee"
+date: "9/20/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(openxlsx)
+library(reshape2)
+
+```
+
+
+```{r parse data}
+
+mut <- read.xlsx("Wagner et al 2018 Supp Table 10.xlsx")
+LOH <- read.xlsx("Wagner et al 2018 Supp Table 11.xlsx")
+
+# Keep only sample/alteration data
+mut_clean <- mut %>% 
+  select(default.gene.name, common.name, trv.type) %>% 
+  unique()
+
+colnames(mut_clean) <- c("Gene", "Sample", "Alteration")
+
+# Clean LoH data. We only care about samples that had LoH
+LOH_clean <- LOH %>% 
+  select(gene, sample, LoH.Call) %>% 
+  mutate(sample = gsub("_.*", '', sample)) %>% 
+  group_by(gene, sample) %>% 
+  summarize(LOH = max(LoH.Call)) %>% 
+  filter(LOH == 1) %>% 
+  mutate(LOH = "Significant LOH") %>% 
+  unique()
+
+colnames(LOH_clean) <- c("Gene", "Sample", "Alteration")
+
+df <- rbind(mut_clean, LOH_clean)
+
+
+# let's gooo
+final <- aggregate(Alteration ~ Sample + Gene, df, FUN = function(x) paste(unlist(x), collapse = '&')) %>% 
+  group_by(Gene, Alteration) %>% 
+  summarize(n = n()) %>% 
+  ungroup() %>% 
+  mutate(Alteration = paste(n, Alteration)) %>% 
+  group_by(Gene) %>% 
+  summarize(Alterations = paste(Alteration, collapse = ", "), n = sum(n)) %>% 
+  mutate(Alterations = paste0(n, "/30 patients, with ", Alterations)) %>% 
+  select(Gene, Alterations)
+
+colnames(final)[1] <- "Gene"
+
+write.xlsx(final, "Wagner et al. 2018 Supp Tables 10 and 11.xlsx", row.names = FALSE, overwrite = TRUE)
+
+
+```
+

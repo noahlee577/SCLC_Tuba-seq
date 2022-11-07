@@ -1,0 +1,30 @@
+---
+title: "DB Caster for Jin et al 2021"
+author: "Myung Chang Lee"
+date: "4/21/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(reshape2)
+library(openxlsx)
+
+```
+
+Though used to reshape dataset in Jin et al. 2021 article, this code should generally work for any dataframe that's in the long form 
+
+
+
+```{r import and reshape dataset }
+
+df <- read.xlsx("Jin et al 2021 BioMed Research International.xlsx")
+
+df2 <- dcast(df, Gene~Mutation_Type, length)
+
+write.xlsx(df2, "Jin et al 2021 BioMed Research International Parsed.xlsx")
+
+
+```
+

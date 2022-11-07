@@ -1,0 +1,198 @@
+---
+title: "Match BC Across Samples"
+author: "Myung Chang Lee (Noah Lee)"
+date: "6/1/2021"
+output: html_document
+---
+
+# Objective:
+This code is designed to match barcodes across samples.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+suppressPackageStartupMessages({
+  library("tidyverse")
+  library("ggplot2")
+  library("openxlsx")
+  library("reticulate")
+  library("reshape2")
+  library("ggrepel")
+  library("gridExtra")
+  library("pheatmap")
+  library("RColorBrewer")
+})
+
+```
+### Will take everything (uncleaned data) and condense them into the following format:
+
+         | Sample 1   | Sample 2 |
+---------|------------|----------|
+Barcode1 | Frequency  | Freq     |
+---------|------------|----------|
+
+...
+
+```{r open Excel}
+
+df <- read.xlsx("All Condensed.xlsx", sheet = 3)
+
+wide <- dcast(df, BC ~ Sample, fun.aggregate = sum, value.var = "#")
+
+wide <- wide[c("BC", paste0("66-", c(1:14)))]
+
+write.xlsx(wide, "Reshaped BC Counts All.xlsx")
+
+
+# Take the cleaned dataset
+df <- read.xlsx("All Condensed.xlsx", sheet = 2)
+
+wide_cleaned <- dcast(df, BC ~ Sample, fun.aggregate = sum, value.var = "#")
+
+wide_cleaned <- wide_cleaned[c("BC", paste0("66-", c(1:14)))]
+
+write.xlsx(wide_cleaned, "Reshaped BC Counts from Cleaned.xlsx")
+
+
+```
+
+
+```{r heatmap of hamming distance}
+
+heat_df <- read.xlsx("BC Hamming Matrix All Coded for Hmap.xlsx", startRow = 3, rowNames = TRUE) %>% 
+  mutate(across(where(is.character), str_trim)) %>% 
+  mutate_if(is.character, as.numeric) %>% 
+  as.matrix()
+
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+unclustered <- pheatmap(heat_df, color = colors, cluster_rows = FALSE, cluster_cols = FALSE)
+
+ggsave("Unclustered Hamming Distance Matrix.pdf", plot = unclustered, height = 10, width = 14)
+
+clustered <- pheatmap(heat_df, color = colors, cluster_rows = TRUE, cluster_cols = TRUE)
+
+ggsave("Clustered Hamming Distance Matrix.pdf", plot = clustered, height = 12.5, width = 17.5)
+
+```
+
+
+
+
+
+
+
+
+```{r create PCA plot}
+
+wider <- wide
+
+rownames(wider) <- wider$BC
+wider$BC <- NULL
+wider <- as.data.frame(as.matrix(t(wider)))
+
+wider.pca <- prcomp(wider)
+
+summary(wider.pca)
+
+pca_plot_data <- data.frame('Section' = rownames(wider), wider.pca$x[,1:3])
+
+base_pca <- ggplot(pca_plot_data) + 
+  geom_text_repel(aes(x = PC1, y = PC2, label = Section), size = rel(3), max.overlaps=50) +
+  geom_point(aes(x = PC1, y = PC2)) +
+  theme_bw() +
+  labs(x = "PC1 (75.8%)", y = "PC2 (15.1%)")
+
+base_pca
+
+ggsave("PCA.png", base_pca)
+ggsave("PCA.pdf", base_pca)
+
+```
+
+```{r donut chart}
+
+wide.pct <- as.data.frame(lapply(wide[-1], function(x) x/sum(x)*100))
+colnames(wide.pct) <- colnames(wide)[-1]
+wide.pct["BC"] <- wide["BC"]
+
+wide.pct <- melt(wide.pct, "BC")
+
+ggdonut <- function(data){
+  ggplot(data = data, aes(x = variable, y = value, fill = BC)) +
+    geom_col() +
+    scale_fill_viridis_d() +
+    facet_grid(~variable) +
+    coord_polar("y") +
+    theme_void() +
+    theme(legend.position = "none", panel.grid.minor = element_blank(),
+          axis.text.x = element_blank()) +
+    labs(x = "", y = "")
+}
+
+donut_plots <- vector("list", 14)
+
+for(i in 1:14){
+  donut_plots[[i]] <- local({
+    i <- i
+    print(ggdonut(wide.pct %>% filter(as.character(variable) == paste0("66-",i))))
+  })
+}
+
+clonality_donut <- grid.arrange(grobs = donut_plots)
+
+clonality_donut
+
+ggsave("clonality_donut.png", clonality_donut)
+ggsave("clonality_donut.pdf", clonality_donut)
+
+
+clonality_donut_all <- ggplot(data = wide.pct, aes(x = variable, y = value, fill = BC)) +
+  geom_col() +
+  scale_fill_viridis_d() +
+  coord_polar("y") +
+  theme_bw() +
+  theme(legend.position = "none", panel.grid.minor = element_blank(),
+        axis.text.x = element_blank()) +
+  labs(x = "", y = "")
+
+clonality_donut_all
+
+ggsave("clonality_donut_all.png", clonality_donut_all, dpi=600)
+ggsave("clonality_donut_all.pdf", clonality_donut_all)
+
+
+
+
+df <- read.xlsx("All Condensed.xlsx", sheet = 1)
+
+wide_5pct <- dcast(df, BC ~ Sample, fun.aggregate = sum, value.var = "#")
+
+wide_5pct <- wide_5pct[c("BC", paste0("66-", c(1:14)))]
+
+write.xlsx(wide, "Reshaped BC Counts 5pct.xlsx")
+
+wide_5pct.pct <- as.data.frame(lapply(wide_5pct[-1], function(x) x/sum(x)*100))
+colnames(wide_5pct.pct) <- colnames(wide_5pct)[-1]
+wide_5pct.pct["BC"] <- wide_5pct["BC"]
+
+wide_5pct.pct <- melt(wide_5pct.pct, "BC")
+
+donut_plots <- vector("list", 14)
+
+for(i in 1:14){
+  donut_plots[[i]] <- local({
+    i <- i
+    print(ggdonut(wide_5pct.pct %>% filter(as.character(variable) == paste0("66-",i))))
+  })
+}
+
+clonality_donut_5pct <- grid.arrange(grobs = donut_plots)
+
+ggsave("clonality_donut_5pct.png", clonality_donut_5pct, dpi=600)
+ggsave("clonality_donut_5pct.pdf", clonality_donut_5pct)
+
+
+```
+

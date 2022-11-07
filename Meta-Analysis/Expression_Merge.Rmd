@@ -1,0 +1,191 @@
+---
+title: "Expression Merge"
+author: "Myung Chang Lee (Noah Lee)"
+date: "8/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(stringsAsFactors = FALSE)
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(openxlsx)
+})
+
+
+```
+
+```{r init}
+
+#source_file = "SCLC Literature/SCLC Mutation Summary All.xlsx"
+#source_file = "SCLC Literature/SCLC Mutation Summary All_counted_6+_studies.xlsx"
+#source_file = "sgRNA/Gene Justification SCLC Mutation Summary All_counted_6+_studies.xlsx"
+
+source_file = "./SCLC Mutation Summary All_counted_prot.xlsx"
+
+df_base <- read.xlsx(source_file)
+
+df_base$Gene.List[duplicated(df_base$Gene.List)]
+
+```
+
+
+
+```{r Read_mouse/human_data}
+expression_file <- "./Primary Data Tables/22 mouse SCLC cell lines merged with 4 human cell lines.xlsx"
+
+
+expression_base <- read.xlsx(expression_file, sheet = 2)
+
+# Change first column name to Gene.List
+colnames(expression_base) <- c("Gene.List", colnames(expression_base)[-1])
+  
+
+expression_base$Gene.List[duplicated(expression_base$Gene.List)]
+
+# mouse SCLC cell lines
+mouse_expression_cols <- c("4T1R", "11T2G", "N2N1G", "12N1G", "5PFBl", "3N1G", "C2T1", "C2T3", "C3T1", "KP3", "C3T2", "CD3", "C3L1", "C3L2", "C3L3", "C4T1", "C4T2", "CD4", "224A", "KP22", "MotL", "25T")
+
+# human SCLC cell lines
+human_expression_cols <- c("H102", "H108", "H29", "H92", "SC1")
+
+expression_df <- expression_base %>% 
+  mutate("Mouse SCLC cell lines mean expression (22, Sage lab, RPKM)" = rowMeans(select(., mouse_expression_cols)),
+         "Human SCLC cell lines mean expression (4, Sage lab, RPKM)" = rowMeans(select(., human_expression_cols))) %>% 
+  select(-c(mouse_expression_cols, human_expression_cols))
+
+# Add quartile annotations
+expression_df <- expression_df %>% 
+  mutate("Mouse SCLC cell line expression percentile" = ntile(`Mouse SCLC cell lines mean expression (22, Sage lab, RPKM)`, 100),
+         "Human SCLC cell line expression percentile" = ntile(`Human SCLC cell lines mean expression (4, Sage lab, RPKM)`, 100))
+
+summary(expression_df$`Mouse SCLC cell lines mean expression (22, Sage lab, RPKM)`)
+
+summary(expression_df$`Human SCLC cell lines mean expression (4, Sage lab, RPKM)`)
+
+new_df <- df_base %>% 
+  left_join(expression_df, by = "Gene.List")
+
+```
+
+
+```{r Read_mouse_data}
+
+SCLC_mouse_file <- "./Primary Data Tables/Dian_all_Batch corrected Mouse only.xlsx"
+
+SCLC_mouse <- read.xlsx(SCLC_mouse_file, sheet=2, startRow=2)
+
+# Change first column name to Gene.List
+colnames(SCLC_mouse) <- c("Gene.List", colnames(SCLC_mouse)[-1])
+
+# cGRP-Cre TKO tumors/mets
+cGRP_expression_cols <- c("C1T1", "C1T2", "C2T2", "C3T2", "C6T1", "C6T2", "C2T1", "C2L1", "C6L2", "C2L2", "C3L2", "C3L3", "C6L1", "C6L34")
+
+CMV_expression_cols <- c("DY11T3", "DY4T1", "DY53T4", "M4T1", "M4T2", "M4T4", "DY53T1", "DY53T3", "M5T2", "M5T4", "M2T3", "M9T2", "M11T2", "M9T1", "DY53T2", "M2T2", "M5T1", "M2T1", "M11T3", "M2N1", "M11N1", "M9N1", "M5N1", "DY53N1", "DY53L1", "DY53Lm", "M2L1", "M2L2", "M5L1", "M5L2", "M9Lm")
+
+expression_df <- SCLC_mouse %>% 
+  mutate("Mouse cGRP-Cre SCLC mean expression (Yang et al. 2018) (TPM)" = rowMeans(select(., cGRP_expression_cols)),
+         "Mouse CMV-Cre SCLC mean expression (Yang et al. 2018) (TPM)" = rowMeans(select(., CMV_expression_cols))) %>% 
+  select(-c(cGRP_expression_cols, CMV_expression_cols)) %>% 
+  mutate(Gene.List = toupper(Gene.List))
+
+
+expression_df$Gene.List[duplicated(expression_df$Gene.List)]
+
+# Get average values 
+avg_per_isoform <- group_by(expression_df, Gene.List) %>% 
+  summarise("Mouse cGRP-Cre SCLC mean expression (Yang et al. 2018) (TPM)" = mean(`Mouse cGRP-Cre SCLC mean expression (Yang et al. 2018) (TPM)`), "Mouse CMV-Cre SCLC mean expression (Yang et al. 2018) (TPM)" = mean(`Mouse CMV-Cre SCLC mean expression (Yang et al. 2018) (TPM)`)) %>% 
+  mutate(unique_name = paste0(Gene.List,"_", "Mouse cGRP-Cre SCLC mean expression (Yang et al. 2018) (TPM)"))
+
+expression_df <- avg_per_isoform %>% 
+  left_join(expression_df, copy = TRUE) %>% 
+  select(-c("unique_name"))
+
+# Add percentile annotations
+expression_df <- expression_df %>% 
+  mutate("Mouse cGRP-Cre SCLC expression percentile" = ntile(`Mouse cGRP-Cre SCLC mean expression (Yang et al. 2018) (TPM)`, 100),
+         "Mouse CMV-Cre SCLC expression percentile" = ntile(`Mouse CMV-Cre SCLC mean expression (Yang et al. 2018) (TPM)`, 100))
+
+expression_df$Gene.List[duplicated(expression_df$Gene.List)]
+
+summary(expression_df$`Mouse cGRP-Cre SCLC mean expression (Yang et al. 2018) (TPM)`)
+
+summary(expression_df$`Mouse CMV-Cre SCLC mean expression (Yang et al. 2018) (TPM)`)
+
+new_df <- new_df %>% 
+  left_join(expression_df, by = "Gene.List")
+
+new_df$Gene.List[duplicated(new_df$Gene.List)]
+
+
+```
+
+```{r Jing human data}
+
+SCLC_human_file <- "./Primary Data Tables/Nature RNA-seq Max_Median_of_Isoforms.csv"
+
+# only interested in the first two columns
+SCLC_human <- read.csv(SCLC_human_file)[1:2]
+
+# Change colnames
+colnames(SCLC_human) <- c("Gene.List", "Human SCLC RNA-seq Max Median of Isoforms (George et al. 2015)  (FPKM)")
+
+
+SCLC_human$Gene.List[duplicated(SCLC_human$Gene.List)]
+
+# Add quartile annotations
+expression_df <- SCLC_human %>% 
+  mutate("Human SCLC RNA-seq Percentile" = ntile(`Human SCLC RNA-seq Max Median of Isoforms (George et al. 2015)  (RPKM)`, 100))
+
+expression_df <- expression_df %>% 
+  mutate(unique_name = paste0(Gene.List, "_", `Human SCLC RNA-seq Max Median of Isoforms (George et al. 2015)  (RPKM)`)) %>% 
+  distinct()
+
+expression_df$unique_name[duplicated(expression_df$unique_name)]
+
+# Get max value and remove duplicates
+max_per_isoform <- group_by(expression_df, Gene.List) %>% 
+  summarise(max_expression = max(`Human SCLC RNA-seq Max Median of Isoforms (George et al. 2015)  (RPKM)`)) %>% 
+  mutate(unique_name = paste0(Gene.List,"_", max_expression)) %>% 
+  distinct()
+
+max_per_isoform$Gene.List[duplicated(max_per_isoform$Gene.List)]
+
+expression_df <- max_per_isoform %>% 
+  left_join(expression_df, copy = TRUE) %>% 
+  select(-c("unique_name", "max_expression"))
+
+expression_df$Gene.List[duplicated(expression_df$Gene.List)]
+
+
+summary(expression_df$`Human SCLC RNA-seq Max Median of Isoforms (George et al. 2015)  (RPKM)`)
+
+new_df <- new_df %>% 
+  left_join(expression_df, by = "Gene.List")
+
+new_df$Gene.List[duplicated(new_df$Gene.List)]
+
+# Writes an Excel file from which you can just copy over the column :)
+write.xlsx(new_df, "Merged_Expression.xlsx", overwrite = TRUE)
+
+```
+
+
+```{r check duplicates}
+# 
+# changed <- df_base
+# changed$George.2015 <- new_df$`George 2015`[1:10752]
+# 
+# inner_df <- df_base %>% 
+#   left_join(df_copy, by='Gene.List')
+# 
+# changed[!is.na(changed$George.2015) & changed$George.2015 != inner_df$`George 2015`,c('Gene.List', 'George.2015')]
+# inner_df[!is.na(changed$George.2015) & changed$George.2015 != inner_df$`George 2015`,c('Gene.List', 'George.2015')]
+
+
+df_base$Gene.List[duplicated(df_base$Gene.List)]
+```
+

@@ -1,0 +1,42 @@
+---
+title: "Yuan_Parse"
+author: "Myung Chang Lee"
+date: "9/20/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(openxlsx)
+library(reshape2)
+
+```
+
+
+```{r parse data}
+
+df <- read.xlsx("Yuan et al 2021 Supp Table.xlsx", sheet = 3)
+
+# Keep only sample/alteration data
+df2 <- df %>% 
+  select(Sample_ID, Gene, Mutation_Type) %>% 
+  unique() 
+
+# let's gooo
+df3 <- aggregate(Mutation_Type ~ Sample_ID + Gene, df2, FUN = function(x) paste(unlist(x), collapse = '&')) %>% 
+  group_by(Gene, Mutation_Type) %>% 
+  summarize(n = n()) %>% 
+  ungroup() %>% 
+  mutate(Mutation_Type = paste(n, Mutation_Type)) %>% 
+  group_by(Gene) %>% 
+  summarize(Alterations = paste(Mutation_Type, collapse = ", "), n = sum(n)) %>% 
+  mutate(Alterations = paste0(n, "/50 patients, with ", Alterations)) %>% 
+  select(Gene, Alterations)
+
+
+write.csv(df3, "Yuan ST3 Parsed.csv", row.names = FALSE)
+
+
+```
+

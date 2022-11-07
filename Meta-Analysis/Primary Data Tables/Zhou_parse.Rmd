@@ -1,0 +1,44 @@
+---
+title: "Zhou_Parse"
+author: "Myung Chang Lee"
+date: "9/20/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(openxlsx)
+library(reshape2)
+
+```
+
+
+```{r parse data}
+
+df <- read.xlsx("Zhou et al 2021 ST2.xlsx", startRow = 2)
+
+# Keep only sample/alteration data
+df2 <- df %>% 
+  select(Hugo_Symbol, Tumor_Sample_Barcode, Variant_Classification) %>% 
+  unique() %>% 
+  mutate(Tumor_Sample_Barcode = gsub('.{2}$', '', Tumor_Sample_Barcode))
+
+# let's gooo
+df3 <- aggregate(Variant_Classification ~ Tumor_Sample_Barcode + Hugo_Symbol, df2, FUN = function(x) paste(unlist(x), collapse = '&')) %>% 
+  group_by(Hugo_Symbol, Variant_Classification) %>% 
+  summarize(n = n()) %>% 
+  ungroup() %>% 
+  mutate(Variant_Classification = paste(n, Variant_Classification)) %>% 
+  group_by(Hugo_Symbol) %>% 
+  summarize(Alterations = paste(Variant_Classification, collapse = ", "), n = sum(n)) %>% 
+  mutate(Alterations = paste0(n, "/40 patients, with ", Alterations)) %>% 
+  select(Hugo_Symbol, Alterations)
+
+colnames(df3)[1] <- "Gene"
+
+write.xlsx(df3, "Zhou 2021 ST2 Parsed.xlsx", row.names = FALSE)
+
+
+```
+

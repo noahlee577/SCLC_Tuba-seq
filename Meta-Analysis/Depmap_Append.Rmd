@@ -1,0 +1,156 @@
+---
+title: "Depmap_Merge"
+author: "Myung Chang Lee (Noah Lee)"
+date: "1/28/2019"
+output: html_document
+---
+
+## Finds Depmap Dependency Scores for genes on the list
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# 
+# # The following initializes usage of Bioc devel
+# BiocManager::install(version='devel')
+# 
+# BiocManager::install("depmap")
+
+suppressPackageStartupMessages({
+  library("dplyr")
+  library("openxlsx")
+  library("depmap")
+  library("ExperimentHub")
+})
+
+
+# Following chunk hook function is from https://stackoverflow.com/questions/24595280/timing-for-chunks
+knitr::knit_hooks$set(timeit = local({
+  now = NULL
+  function(before, options) {
+    if (before) {
+      now <<- Sys.time()
+    } else {
+      res = difftime(Sys.time(), now)
+      now <<- NULL
+      # use options$label if you want the chunk label as well
+      paste('Time for this code chunk:', as.character(res))
+    }
+  }})
+)
+
+
+```
+
+
+## Load gene database
+
+```{r load gene db, timeit=TRUE}
+
+source_file = "./SCLC Mutation Summary All_counted_prot.xlsx"
+
+df_base <- read.xlsx(source_file)
+
+df_base$Gene.List[duplicated(df_base$Gene.List)]
+
+
+```
+
+
+## Load data from the Depmap dataset
+
+```{r load depmap dataset, timeit=TRUE}
+
+eh <- ExperimentHub()
+
+query(eh, "depmap")
+
+# get 21Q1 data
+metadata <- eh[["EH5362"]]
+
+crispr <- eh[["EH5358"]]
+
+# rnai <- depmap::rnai_19Q3()
+# copyNumber <- depmap::copyNumber_19Q3()
+# drug_sensitivity <- depmap::drug_sensitivity_19Q3()
+# expression <- eh[["EH5360"]]
+
+```
+
+## Deconvolve data by disease subtypes
+
+```{r deconvolve by disease, timeit=TRUE}
+
+SCLC_cells <- metadata %>% 
+  filter(lineage_subtype == 'SCLC')
+
+NSCLC_cells <- metadata %>% 
+  filter(lineage_subtype == 'NSCLC')
+
+other_cells <- metadata %>% 
+  filter(lineage_subtype != 'SCLC')
+
+
+SCLC_dep <- crispr %>% 
+  filter(depmap_id %in% SCLC_cells$depmap_id)
+
+NSCLC_dep <- crispr %>% 
+  filter(depmap_id %in% NSCLC_cells$depmap_id)
+
+other_dep <- crispr %>% 
+  filter(depmap_id %in% other_cells$depmap_id)
+
+
+```
+
+## Calculate median dependency score for each disease type and gene
+
+```{r calculate median dependencies, timeit=TRUE}
+
+SCLC_medians <- SCLC_dep %>% 
+  group_by(gene_name) %>% 
+  summarize(median(dependency, na.rm = TRUE))
+
+colnames(SCLC_medians) <- c("Gene.List", "SCLC median dependency score (Avana)")
+
+NSCLC_medians <- NSCLC_dep %>% 
+  group_by(gene_name) %>% 
+  summarize(median(dependency, na.rm = TRUE))
+
+colnames(NSCLC_medians) <- c("Gene.List", "NSCLC median dependency score (Avana)")
+
+other_medians <- other_dep %>% 
+  group_by(gene_name) %>% 
+  summarize(median(dependency, na.rm = TRUE))
+
+colnames(other_medians) <- c("Gene.List", "Non-SCLC median dependency score (Avana)")
+
+
+
+```
+
+
+
+## Join the two dataframes together
+
+```{r join dfs, timeit=TRUE}
+
+new_df <- df_base %>% 
+  left_join(SCLC_medians, by = "Gene.List") %>% 
+  left_join(NSCLC_medians, by = "Gene.List") %>% 
+  left_join(other_medians, by = "Gene.List")
+
+
+# Writes an Excel file from which you can just copy over the column :)
+write.xlsx(new_df, "Merged_Dependency.xlsx", overwrite = TRUE)
+
+
+
+```
+
+
+
+
+

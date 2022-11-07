@@ -1,0 +1,78 @@
+---
+title: "SCLC_Mutation_Plot"
+author: "Myung Chang Lee (Noah Lee)"
+date: "5/1/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(stringsAsFactors = FALSE)
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(openxlsx)
+  library("ggrepel") # For avoiding text overlap in plot
+})
+
+```
+
+
+```{r Read_data}
+
+fileroot = "C:/Users/noahl/"
+
+df_basic <- read.xlsx(paste0(fileroot, "Box/Sage Lab Server/Noah/SCLC Literature/SCLC Mutation Summary All_counted.xlsx"))
+
+df_extended <- read.xlsx(paste0(fileroot, "Box/Sage Lab Server/Noah/SCLC Literature/SCLC Mutation Summary All_counted_5+_studies.xlsx"))
+
+
+df_all <- read.xlsx(paste0(fileroot, "Box/Sage Lab Server/Noah/SCLC Literature/SCLC Mutation Summary All_counted_6+_studies.xlsx"))
+
+
+cutoff <- 5
+
+# Filter for genes that appear in greater than x # of studies
+df_all <- df_all %>% 
+  filter(Count > cutoff)
+
+
+```
+
+
+```{r Mutation plots, dev=c('png', 'pdf'), fig.height=6, fig.width=6, fig.path="./figs_downstream_analysis/"}
+
+plot_df <- function(df, prop_cutoff = 20, number_cutoff = 70){
+  # Actually make the proportion into percentage mutated...
+  df <- df %>% 
+    mutate(Proportion.Altered = Proportion.Altered * 100)
+  
+  pdf("graph.pdf")
+  
+  ggplot(data = df, aes(x = `#Altered`, y = Proportion.Altered)) +
+    geom_point() +
+    geom_point(data = subset(df, Proportion.Altered > prop_cutoff & `#Altered` > number_cutoff), aes(color = I("dark green"))) +
+    geom_text_repel(data = subset(df, Proportion.Altered > prop_cutoff & `#Altered` > number_cutoff), aes(label = Gene.List)) +
+    theme_classic() +
+    xlab("# Patient Cases with Alterations") +
+    ylab("% Patients with Alterations")
+  
+  dev.off()
+  
+  
+  ggplot(data = df, aes(x = `#Altered`, y = Proportion.Altered)) +
+    geom_point() +
+    geom_point(data = subset(df, Proportion.Altered > prop_cutoff & `#Altered` > number_cutoff), aes(color = I("dark green"))) +
+    geom_text_repel(data = subset(df, Proportion.Altered > prop_cutoff & `#Altered` > number_cutoff), aes(label = Gene.List)) +
+    theme_classic() +
+    xlab("# Patient Cases with Alterations") +
+    ylab("% Patients with Alterations")
+}
+
+plot_df(df_basic, prop_cutoff = 22, number_cutoff = 50)
+plot_df(df_extended)
+plot_df(df_all)
+
+```
+

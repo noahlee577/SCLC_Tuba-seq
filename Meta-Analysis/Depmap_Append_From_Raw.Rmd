@@ -1,0 +1,284 @@
+---
+title: "Depmap_Merge_From_Raw"
+author: "Myung Chang Lee (Noah Lee)"
+date: "1/28/2019"
+output: html_document
+---
+
+## Finds Depmap Dependency Scores for genes on the list
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# 
+# # The following initializes usage of Bioc devel
+# BiocManager::install(version='devel')
+# 
+# BiocManager::install("depmap")
+
+suppressPackageStartupMessages({
+  library("tidyverse")
+  library("openxlsx")
+  library("reshape2")
+  library("reticulate")
+  use_python("python")
+})
+
+
+# Following chunk hook function is from https://stackoverflow.com/questions/24595280/timing-for-chunks
+knitr::knit_hooks$set(timeit = local({
+  now = NULL
+  function(before, options) {
+    if (before) {
+      now <<- Sys.time()
+    } else {
+      res = difftime(Sys.time(), now)
+      now <<- NULL
+      # use options$label if you want the chunk label as well
+      paste('Time for this code chunk:', as.character(res))
+    }
+  }})
+)
+
+
+```
+
+
+## Load gene database
+
+```{r load gene db, timeit=TRUE}
+
+source_file = "./SCLC Mutation Summary All_counted_prot.xlsx"
+
+df_base <- read.xlsx(source_file)
+
+df_base$Gene.List[duplicated(df_base$Gene.List)]
+
+```
+
+
+## Load data from the Depmap dataset
+
+```{python read files, timeit = TRUE}
+
+import pandas as pd
+
+sample_info = pd.read_csv("./Primary Data Tables/sample_info.csv")
+depmap_df = pd.read_csv("./Primary Data Tables/CRISPR_gene_effect.csv")
+expression_data = pd.read_csv("./Primary Data Tables/CCLE_expression_full.csv")
+
+```
+
+```{r load depmap dataset, timeit=TRUE}
+
+metadata <- py$sample_info
+crispr <- py$depmap_df
+expression <- py$expression_data
+
+```
+
+```{r clean up gene names}
+# Will convert something like "SLC4A1 (ENSG00000005007)" to "SLC4A1"
+colnames(expression) <- str_trim(str_extract_all(colnames(expression), "^(.+) "))
+colnames(expression)[1] <- "DepMap_ID"
+
+colnames(crispr) <- str_trim(str_extract_all(colnames(crispr), "^(.+) "))
+colnames(crispr)[1] <- "DepMap_ID"
+
+if(length(unique(colnames(expression))) != length(colnames(expression))){
+  print("Column names are not unique in expression dataset")
+} else {
+  print("Column names are unique in expression dataset")
+}
+
+if(length(unique(colnames(crispr))) != length(colnames(crispr))){
+  print("Column names are not unique in CRISPR dataset")
+} else {
+  print("Column names are unique in CRISPR dataset")
+}
+
+# Need to consolidate duplicate gene column names in expression db
+
+# The following two lines are adapted from 
+# https://stackoverflow.com/questions/42098707/merge-duplicate-columns-and-summing-values-in-r
+
+new_df <- sapply(unique(colnames(expression)[duplicated(colnames(expression))]), function(x) rowMeans(expression[,grepl(x, colnames(expression))], na.rm = TRUE))
+
+deduplicated_expression_data <- as.data.frame(cbind(new_df, expression[,!duplicated(colnames(expression)) & !duplicated(colnames(expression), fromLast = TRUE)]))
+```
+
+
+
+## Deconvolve data by disease subtypes
+
+```{r deconvolve by disease, timeit=TRUE}
+
+SCLC_cells <- metadata %>% 
+  filter(lineage_subtype == 'SCLC')
+
+NSCLC_cells <- metadata %>% 
+  filter(lineage_subtype == 'NSCLC')
+
+other_cells <- metadata %>% 
+  filter(lineage_subtype != 'SCLC')
+
+Ewing_cells <- metadata %>% 
+  filter(Subtype == 'Ewings Sarcoma')
+
+NP_cells <- metadata %>% 
+  filter(Subtype == 'Neuroendocrine Prostate Cancer')
+
+SCLC_dep <- crispr %>% 
+  filter(DepMap_ID %in% SCLC_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "dependency")
+
+NSCLC_dep <- crispr %>% 
+  filter(DepMap_ID %in% NSCLC_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "dependency")
+
+other_dep <- crispr %>% 
+  filter(DepMap_ID %in% other_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "dependency")
+
+Ewing_dep <- crispr %>% 
+  filter(DepMap_ID %in% Ewing_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "dependency")
+
+NP_dep <- crispr %>% 
+  filter(DepMap_ID %in% NP_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "dependency")
+
+
+SCLC_exp <- deduplicated_expression_data %>% 
+  filter(DepMap_ID %in% SCLC_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "expression")
+
+NSCLC_exp <- deduplicated_expression_data %>% 
+  filter(DepMap_ID %in% NSCLC_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "expression")
+
+other_exp <- deduplicated_expression_data %>% 
+  filter(DepMap_ID %in% other_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "expression")
+
+Ewing_exp <- deduplicated_expression_data %>% 
+  filter(DepMap_ID %in% Ewing_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "expression")
+
+NP_exp <- deduplicated_expression_data %>% 
+  filter(DepMap_ID %in% NP_cells$DepMap_ID) %>% 
+  select(-"DepMap_ID") %>% 
+  melt(variable.name = "Gene", value.name = "expression")
+
+```
+
+
+
+## Calculate median dependency score for each disease type and gene
+
+```{r calculate median dependencies, timeit=TRUE}
+
+SCLC_dep_medians <- SCLC_dep %>% 
+  group_by(Gene) %>% 
+  summarize(median(dependency, na.rm = TRUE))
+
+colnames(SCLC_dep_medians) <- c("Gene", "SCLC median dependency score (Achilles/DepMap)")
+
+NSCLC_dep_medians <- NSCLC_dep %>% 
+  group_by(Gene) %>% 
+  summarize(median(dependency, na.rm = TRUE))
+
+colnames(NSCLC_dep_medians) <- c("Gene", "NSCLC median dependency score (Achilles/DepMap)")
+
+other_dep_medians <- other_dep %>% 
+  group_by(Gene) %>% 
+  summarize(median(dependency, na.rm = TRUE))
+
+colnames(other_dep_medians) <- c("Gene", "Non-SCLC median dependency score (Achilles/DepMap)")
+
+Ewing_dep_medians <- Ewing_dep %>% 
+  group_by(Gene) %>% 
+  summarize(median(dependency, na.rm = TRUE))
+
+colnames(Ewing_dep_medians) <- c("Gene", "Ewing's Sarcoma median dependency score (Achilles/DepMap)")
+
+NP_dep_medians <- NP_dep %>% 
+  group_by(Gene) %>% 
+  summarize(median(dependency, na.rm = TRUE))
+
+colnames(NP_dep_medians) <- c("Gene", "Neuroendocrine prostate cancer median dependency score (Achilles/DepMap)")
+
+
+SCLC_exp_medians <- SCLC_exp %>% 
+  group_by(Gene) %>% 
+  summarize(median(expression, na.rm = TRUE))
+
+colnames(SCLC_exp_medians) <- c("Gene", "SCLC median expression from CCLE (TPM)")
+
+NSCLC_exp_medians <- NSCLC_exp %>% 
+  group_by(Gene) %>% 
+  summarize(median(expression, na.rm = TRUE))
+
+colnames(NSCLC_exp_medians) <- c("Gene", "NSCLC median expression from CCLE (TPM)")
+
+other_exp_medians <- other_exp %>% 
+  group_by(Gene) %>% 
+  summarize(median(expression, na.rm = TRUE))
+
+colnames(other_exp_medians) <- c("Gene", "Non-SCLC median expression from CCLE (TPM)")
+
+Ewing_exp_medians <- Ewing_exp %>% 
+  group_by(Gene) %>% 
+  summarize(median(expression, na.rm = TRUE))
+
+colnames(Ewing_exp_medians) <- c("Gene", "Ewing's Sarcoma expression from CCLE (TPM)")
+
+NP_exp_medians <- NP_exp %>% 
+  group_by(Gene) %>% 
+  summarize(median(expression, na.rm = TRUE))
+
+colnames(NP_exp_medians) <- c("Gene", "Neuroendocrine prostate cancer median expression from CCLE (TPM)")
+
+```
+
+
+
+## Join the dataframes together
+
+```{r join dfs, timeit=TRUE}
+
+new_df <- df_base %>% 
+  left_join(SCLC_dep_medians, by = "Gene") %>% 
+  left_join(NSCLC_dep_medians, by = "Gene") %>% 
+  left_join(Ewing_dep_medians, by = "Gene") %>% 
+  left_join(NP_dep_medians, by = "Gene") %>% 
+  left_join(other_dep_medians, by = "Gene") %>% 
+  left_join(SCLC_exp_medians, by = "Gene") %>% 
+  left_join(NSCLC_exp_medians, by = "Gene") %>% 
+  left_join(Ewing_exp_medians, by = "Gene") %>% 
+  left_join(NP_exp_medians, by = "Gene") %>% 
+  left_join(other_exp_medians, by = "Gene")
+
+
+# Writes an Excel file from which you can just copy over the column :)
+write.xlsx(new_df, "Merged_Dependency.xlsx", overwrite = TRUE)
+
+
+
+```
+
+
+
+
+

@@ -1,0 +1,324 @@
+---
+title: "Counts_Histogram"
+author: "Myung Chang Lee (Noah Lee)"
+date: "11/13/2019"
+output: html_document
+---
+
+## Generates a histogram of # of genes above certain study threshold
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(stringsAsFactors = FALSE)
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(openxlsx)
+  library(scales)
+  library(ggpubr)
+  library(RColorBrewer)
+  library(ggprism)
+})
+
+fig_output_dir <- "./Figures_Filtered/"
+
+```
+
+
+```{r load data}
+
+# filename = "./SCLC Mutation Summary All_counted_prot.xlsx"
+filename = "./Supp Table 3 - Top Filtered TSG Candidates.xlsx"
+all_filename <- "./Supp Table 2 - Summary of SCLC Genetic Alteration Freqs.xlsx"
+
+
+# Read first sheet
+# df <- read.xlsx(filename, 1)
+# For ones with Supplemental Table heading, skip first two rows
+df <- read.xlsx(filename, 1, startRow = 3)
+
+all_df <- read.xlsx(all_filename, 1, startRow = 3)
+
+# Clean up annoying auto format
+colnames(df) <- gsub("[\\._]", " ", colnames(df))
+
+colnames(all_df) <- gsub("[\\._]", " ", colnames(all_df))
+
+```
+
+```{r plot study counts histogram}
+
+hist_df <- df %>% 
+  group_by(`# Studies`) %>% 
+  summarize(Studies = n())
+
+## we have # genes per Study Count now.
+## Will now subtract each bin by running total to get # genes that have Study Count >= (Study Count - 1)
+running_total <- sum(hist_df$Studies)
+
+
+# Fill ones with 0 genes
+# i.e. if there are no genes that are covered by 19 studies exactly, fill in 19 studies = 0 genes
+new_hist_df <- hist_df %>% 
+  complete(`# Studies` = full_seq(`# Studies`, period = 1), fill = list(Studies = 0))
+
+
+for(i in 1:nrow(new_hist_df)){
+  temp = new_hist_df$Studies[i]
+  new_hist_df$Studies[i] = running_total - new_hist_df$Studies[i]
+  running_total = running_total - temp
+}
+
+# Shift over the # Studies to be # genes Study count >= Study Count now
+new_hist_df$Studies <- c(0, new_hist_df$Studies[-length(new_hist_df$Studies)])
+# All studies count when # genes for study count >= 0...
+new_hist_df$Studies[1] <- sum(hist_df$Studies)
+
+
+count_hist <- ggplot(data = new_hist_df) +
+  geom_bar(aes(x = `# Studies`, y = Studies, fill = cut(`# Studies`, 100)), show.legend = FALSE, stat = "identity") +
+  xlab("Studies (#)") +
+  ylab("Genes within Threshold (#)") +
+  scale_y_log10(labels = function(x) parse(text=gsub(".+e\\+", "10^", scales::scientific_format()(x)))) +
+  scale_fill_viridis_d() +
+  theme_pubclean() +
+  theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+  theme(text = element_text(size = 15),
+        axis.text = element_text(size = 15)) +
+  theme(axis.title.x=element_text(size=16),axis.title.y=element_text(size=16), legend.position = "none",
+          axis.text = element_text(size = 14),
+          axis.ticks.length = unit(0,"cm"),panel.background = element_rect(color="black")) +
+    #       , strip.text.x=element_text(size=24), strip.background=element_rect(fill="white"), , panel.grid.major = element_line(color=alpha("black",0.1))) +
+    guides(size="none", color = guide_legend(override.aes = list(size=3))) 
+
+count_hist
+
+ggsave(paste0(fig_output_dir, "Gene Count Histogram.png"), plot = count_hist, height = 5, width = 12, dpi = 600)
+ggsave(paste0(fig_output_dir, "Gene Count Histogram.pdf"), plot = count_hist, height = 5, width = 12)
+
+```
+
+
+```{r plot study number histogram}
+
+total_studies_df <- df %>% 
+  select(`# Studies`) 
+
+st_total_hist <- ggplot(data = total_studies_df) +
+  geom_histogram(aes(x = `# Studies`, fill = cut(`# Studies`, 100)), show.legend = FALSE, binwidth = 1) +
+  xlab("Studies (#)") +
+  ylab("# Genes") +
+  # log1p to not lose values of 1
+  coord_trans(y = "log1p") +
+  scale_y_continuous(breaks=c(1, 10, 100, 1000, 10000)) + 
+  #scale_y_log10(labels = function(x) parse(text=gsub(".+e\\+", "10^", scales::scientific_format()(x)))) +
+  scale_fill_viridis_d() +
+  theme_pubclean() +
+  theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+  theme(text = element_text(size = 15),
+        axis.text = element_text(size = 15)) +
+  theme(axis.title.x=element_text(size=16),axis.title.y=element_text(size=16), legend.position = "none",
+          axis.text = element_text(size = 14),
+          axis.ticks.length = unit(0,"cm"),panel.background = element_rect(color="black")) +
+    #       , strip.text.x=element_text(size=24), strip.background=element_rect(fill="white"), , panel.grid.major = element_line(color=alpha("black",0.1))) +
+    guides(size="none", color = guide_legend(override.aes = list(size=3)))
+
+st_total_hist
+
+# Previously 7 x 10
+ggsave(paste0(fig_output_dir, "Studies Total Histogram.png"), plot = st_total_hist, height = 5, width = 12, dpi = 600)
+ggsave(paste0(fig_output_dir, "Studies Total Histogram.pdf"), plot = st_total_hist, height = 5, width = 12)
+
+
+```
+
+
+```{r plot patient number histogram}
+
+total_pts_df <- df %>% 
+  select(`# Total Patients Profiled`) 
+
+pt_total_hist <- ggplot(data = total_pts_df) +
+  geom_histogram(aes(x = `# Total Patients Profiled`, fill = cut(`# Total Patients Profiled`, 100)), show.legend = FALSE, binwidth = 30) +
+  xlab("# Total Patients Profiled") +
+  ylab("# Genes") +
+  # log1p to not lose values of 1
+  coord_trans(y = "log1p") +
+  scale_y_continuous(breaks=c(1, 10, 100, 1000, 10000)) + 
+  #scale_y_log10(labels = function(x) parse(text=gsub(".+e\\+", "10^", scales::scientific_format()(x)))) +
+  scale_fill_viridis_d() +
+  theme_pubclean() +
+  theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+  theme(text = element_text(size = 15),
+        axis.text = element_text(size = 15)) +
+  theme(axis.title.x=element_text(size=16),axis.title.y=element_text(size=16), legend.position = "none",
+          axis.text = element_text(size = 14),
+          axis.ticks.length = unit(0,"cm"),panel.background = element_rect(color="black")) +
+    #       , strip.text.x=element_text(size=24), strip.background=element_rect(fill="white"), , panel.grid.major = element_line(color=alpha("black",0.1))) +
+    guides(size="none", color = guide_legend(override.aes = list(size=3)))
+
+pt_total_hist
+
+ggsave(paste0(fig_output_dir, "Patient Total Histogram.png"), plot = pt_total_hist, height = 5, width = 12, dpi = 600)
+ggsave(paste0(fig_output_dir, "Patient Total Histogram.pdf"), plot = pt_total_hist, height = 5, width = 12)
+
+
+```
+
+```{r plot cumulative patient counts histogram}
+generate_hist_df <- function(df){
+  # Factor to divide patient counts by
+  div_factor <- 100
+  
+  
+  hist_df <- df %>% 
+    group_by(`# Total Patients Profiled`) %>% 
+    summarize(Gene_n = n()) %>% 
+    mutate(ID = floor(`# Total Patients Profiled`/div_factor))
+  
+  
+  # Adapted from https://stackoverflow.com/questions/16850207/calculate-cumulative-sum-cumsum-by-group
+  hist_df$csum <- ave(hist_df$Gene_n, hist_df$ID, FUN=cumsum)
+  
+  # Perform cumulative sum, then fill ones with 0 genes
+  # i.e. if there are no genes that are covered by 1900 - 2000 patients, fill in 2000/div_factor = 0 genes
+  hist_df <- hist_df %>% 
+    group_by(ID) %>% 
+    summarize(Gene_n = max(csum)) %>% 
+    complete(ID = full_seq(ID, period = 1), fill = list(Gene_n = 0)) %>% 
+    mutate(`# Total Patients Profiled` = ID*div_factor)
+  
+  # Order in descending order (Higher Patient Total first), then cumulative sum
+  hist_df <- hist_df[order(hist_df$`# Total Patients Profiled`, decreasing = TRUE),] %>% 
+    mutate(Gene_n = cumsum(Gene_n))
+  
+  return(hist_df)
+} 
+
+
+cumulative_pt_count_hist <- function(df, name, df2=FALSE){
+  # Just one df to plot
+  if(df2 == FALSE){
+    hist_df <- generate_hist_df(df)
+  
+    count_hist <- ggplot(data = hist_df) +
+      geom_bar(aes(x = `# Total Patients Profiled`, y = Gene_n), show.legend = FALSE, stat = "identity") +
+      xlab("# Total Patients Profiled") +
+      ylab("Genes within Threshold (#)") +
+      scale_y_log10(labels = function(x) parse(text=gsub(".+e\\+", "10^", scales::scientific_format()(x)))) +
+      # scale_fill_manual(values = colorRampPalette(c("#C6DBEF", "#084594"))(100)) +
+      # scale_fill_manual(values = colorRampPalette(c("#000000", "#A0A0A4", "#808080", "#D4D4D4"))(100)) +
+      # scale_fill_viridis_d() +
+      theme_prism()
+    
+    count_hist
+    
+    ggsave(paste0(fig_output_dir, name, ".png"), plot = count_hist, height = 5, width = 7, dpi = 600)
+    ggsave(paste0(fig_output_dir, name, ".pdf"), plot = count_hist, height = 5, width = 7)
+    
+    count_hist
+  }
+  else {
+    hist_df1 <- generate_hist_df(df)
+    hist_df2 <- generate_hist_df(df2)
+  
+    count_hist <- ggplot() +
+      geom_bar(data = hist_df1, mapping = aes(x = `# Total Patients Profiled`, y = Gene_n), show.legend = FALSE, stat = "identity", fill = I("steelblue2")) +
+      geom_bar(data = hist_df2, mapping = aes(x = `# Total Patients Profiled`, y = Gene_n), show.legend = FALSE, stat = "identity", alpha = 0.9, fill = I("grey85")) +
+      xlab("# Total Patients Profiled") +
+      ylab("Genes within Threshold (#)") +
+      scale_y_log10(labels = function(x) parse(text=gsub(".+e\\+", "10^", scales::scientific_format()(x)))) +
+      # scale_fill_manual(values = colorRampPalette(c("#C6DBEF", "#084594"))(100)) +
+      # scale_fill_manual(values = colorRampPalette(c("#000000", "#A0A0A4", "#808080", "#D4D4D4"))(100)) +
+      # scale_fill_viridis_d() +
+      theme_prism()
+    
+    count_hist
+    
+    ggsave(paste0(fig_output_dir, name, ".png"), plot = count_hist, height = 5, width = 7, dpi = 600)
+    ggsave(paste0(fig_output_dir, name, ".pdf"), plot = count_hist, height = 5, width = 7)
+    
+    count_hist
+  }
+}
+
+cumulative_pt_count_hist(all_df, "Cumulative Patient Count Histogram")
+
+cBioPortal_df <- read.xlsx("20220215 cBioPortal SCLC Mutations.xlsx") %>% 
+  mutate(`# Total Patients Profiled` = Profiled.Samples)
+
+cumulative_pt_count_hist(all_df, "Cumulative Patient Count Histogram - cBioPortal", cBioPortal_df)
+
+
+
+```
+
+
+
+```{r percentage alteration graph function}
+
+graph_props <- function(props_df){
+  plot <-  ggplot(data = props_df) +
+    geom_histogram(aes(x = PercentAlt, fill = cut(PercentAlt, 100)), show.legend = FALSE, binwidth = 2) +
+    xlab("Percentage of Patients with Alterations") +
+    ylab("# Genes") +
+    # log1p to not lose values of 1
+    coord_trans(y = "log1p") +
+    scale_y_continuous(breaks=c(1, 10, 100, 1000, 10000)) + 
+    scale_fill_viridis_d()  +
+    theme_pubclean() +
+    theme(plot.margin = unit(c(1,1,2,1), "lines")) +
+    theme(text = element_text(size = 15),
+          axis.text = element_text(size = 15)) +
+    theme(axis.title.x=element_text(size=16),axis.title.y=element_text(size=16), legend.position = "none",
+          axis.text = element_text(size = 14),
+          axis.ticks.length = unit(0,"cm"),panel.background = element_rect(color="black")) +
+    #       , strip.text.x=element_text(size=24), strip.background=element_rect(fill="white"), , panel.grid.major = element_line(color=alpha("black",0.1))) +
+    guides(size="none", color = guide_legend(override.aes = list(size=3)))
+  
+  return(plot)
+}
+
+```
+
+
+
+```{r plot alteration percentage histogram}
+
+props_df <- all_df %>% 
+  select(`Proportion of Patients with Alterations`) %>% 
+  mutate(PercentAlt = 100*`Proportion of Patients with Alterations`)
+
+props_hist <- graph_props(props_df)
+
+props_hist
+
+ggsave(paste0(fig_output_dir, "Percent Alteration Histogram.png"), plot = props_hist, height = 5, width = 12, dpi = 600)
+ggsave(paste0(fig_output_dir, "Percent Alteration Histogram.pdf"), plot = props_hist, height = 5, width = 12)
+
+
+```
+
+
+
+
+
+```{r plot alteration percentage filtered histogram}
+
+props_filtered_df <- df %>% 
+  filter(`# Total Patients Profiled` >= 250) %>% 
+  select(`Proportion of Patients with Alterations`) %>% 
+  mutate(PercentAlt = 100*`Proportion of Patients with Alterations`) 
+  
+
+props_filtered_hist <- graph_props(props_filtered_df)
+
+props_filtered_hist
+
+ggsave(paste0(fig_output_dir, "Percent Alteration Filtered Histogram.png"), plot = props_filtered_hist, height = 5, width = 12, dpi = 600)
+ggsave(paste0(fig_output_dir, "Percent Alteration Filtered Histogram.pdf"), plot = props_filtered_hist, height = 5, width = 12)
+
+
+```

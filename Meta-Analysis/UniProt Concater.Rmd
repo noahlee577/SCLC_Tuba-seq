@@ -1,0 +1,121 @@
+---
+title: "UniProt Concater"
+author: "Myung Chang Lee (Noah Lee)"
+date: "11/11/2019"
+output: html_document
+---
+
+Adds matching UniProt data for each gene
+In a case where there are multiple UniProt entries for a gene, picks the one with largest amino acid residue length
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(stringsAsFactors = FALSE)
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(openxlsx)
+  library(reticulate)
+  library(rlang)
+  use_python("python")
+})
+
+
+```
+
+```{r load data}
+
+data_root <- "./Primary Data Tables/"
+base_filename <- "SCLC Mutation Summary All_counted.xlsx"
+uniprot_filename <- "UniProt on SCLC_All.xlsx"
+CRISPR_screen_filename <- "Li 2019 CRISPR Data.xlsx"
+
+base_df <- read.xlsx(paste0(base_filename))
+uniprot_df <- read.xlsx(paste0(data_root, uniprot_filename))
+CRISPR_df <- read.xlsx(paste0(data_root, CRISPR_screen_filename))
+
+
+```
+
+```{r convert CRISPR mouse genes to human symbols, eval = FALSE}
+
+## Function adapted from https://rjbioinformatics.com/2016/10/14/converting-mouse-to-human-gene-names-with-biomart-package/
+
+# Basic function to convert mouse to human gene names
+convertMouseGeneList <- function(x){
+  require("biomaRt")
+  human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+  mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+ 
+  genesV2 = getLDS(attributes = c("mgi_symbol"), filters = "mgi_symbol", values = x , mart = mouse, attributesL = c("hgnc_symbol"), martL = human, uniqueRows=T)
+  human_genes <- unique(genesV2[, 2])
+
+  return(human_genes) 
+}
+
+testm <- CRISPR_df$Gene[1:10]
+testh <- convertMouseGeneList(testm)
+
+test <- cbind(testm, testh)
+
+test
+
+duplicated(CRISPR_df$Gene)
+
+```
+
+
+
+
+```{r Concat df}
+
+colnames(uniprot_df) <- c("Gene.List", colnames(uniprot_df)[-1])
+
+uniprot_df <- uniprot_df %>% 
+    select(c("Gene.List", "Protein.names", "Length")) %>% 
+    mutate(Gene.List = str_trim(Gene.List))
+  
+# Remove duplicate gene probes and select for one with highest absolute fold change ---------
+
+uniprot_df <- uniprot_df %>% 
+  mutate(unique_name = paste0(Gene.List,"_", Length))
+
+max_per_prot <- uniprot_df %>% 
+  group_by(Gene.List) %>% 
+  summarise(max_length = max(Length)) %>% # Select for max amino acid length
+  mutate(unique_name = paste0(Gene.List,"_", max_length))
+
+unique_uniprot <- max_per_prot %>% 
+  left_join(uniprot_df, copy = TRUE) %>% 
+  select(-c("unique_name", "max_length"))
+
+duplicated_genes <- unique_uniprot$Gene.List[duplicated(unique_uniprot$Gene.List)]
+
+# print any duplicates
+if(!is_empty(duplicated_genes)){
+  print(duplicated_genes)
+}
+
+# remove duplicates (which have the exact same a.a. length)
+unique_uniprot <- unique_uniprot[!duplicated(unique_uniprot$Gene.List),]
+
+duplicated_genes <- unique_uniprot$Gene.List[duplicated(unique_uniprot$Gene.List)]
+
+# print any duplicates
+print(duplicated_genes)
+
+
+  
+# Join the dfs
+new_df <- base_df %>% 
+  full_join(unique_uniprot, by="Gene.List")
+  
+
+
+# Writes an Excel file from which you can just copy over the column :)
+write.xlsx(new_df, "Merged_Prot.xlsx", overwrite = TRUE)
+
+```

@@ -1,0 +1,10 @@
+python 1Process\ Fastq\ to\ count\ reads\ mapped\ to\ each\ sgID-BC\ region.py $(ls All\ Fastq\ Files/ | grep R1)
+
+OR
+
+python '.\1Process Fastq to count reads mapped to each sgID-BC region.py' $(ls -Path '.\All Fastq Files\' -Name | findstr R1)
+
+
+OR
+
+python '.\1Process Fastq for BC only.py' $(ls -Path '.\All Fastq Files\' -Name | findstr R1)

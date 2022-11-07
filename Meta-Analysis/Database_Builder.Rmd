@@ -1,0 +1,189 @@
+---
+title: "Database Builder"
+author: "Myung Chang Lee (Noah Lee)"
+date: "5/6/2019"
+revised: "3/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(stringsAsFactors = FALSE)
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(openxlsx)
+  library(reticulate)
+  library(rlang)
+  use_python("python")
+})
+
+
+```
+
+```{python locate_datafiles}
+
+import os
+import re
+
+source_dir = "./Primary Data Tables/Notated for Concat/"
+
+print(os.listdir(source_dir))
+
+file_list = os.listdir(source_dir)
+
+```
+
+```{r preformat_CNA_Mutation_data_pt.1}
+
+MSK_Mut <- read_tsv(paste0(py$source_dir, "MSKCC 2017 Mutated_Genes.txt")) %>% 
+  mutate(Summary = paste0("Mutated in ", `#`, " samples out of ", `Profiled Samples`)) %>% 
+  mutate(Gene = str_trim(Gene))
+
+# [sic] regarding flipping # and profiled samples
+MSK_CNA <- read_tsv(paste0(py$source_dir, "MSKCC 2017 CNV Genes.txt")) %>% 
+  mutate(Summary = paste0(CNA, " in ", `Profiled Samples`, " samples out of ", `#`)) %>% 
+  mutate(Gene = str_trim(Gene))
+
+MSK_raw_combine <- MSK_Mut %>% 
+  merge(MSK_CNA, all = TRUE)
+
+# Remove MSK files from file list
+py$file_list <- py$file_list[!py$file_list %in% c("MSKCC 2017 Mutated_Genes.txt", "MSKCC 2017 CNV Genes.txt")]
+
+```
+
+```{python parse MSK CNA}
+import pandas as pd
+
+# Concatenate all alterations by gene
+Merged_MSK = r.MSK_raw_combine.groupby('Gene')['Summary'].apply(lambda x: "; ".join(x))
+
+
+# Function to ascertain total alterations
+
+def get_counts(element):
+    match_obj = re.search(r"([\w]+) in (\d+) samples out of (\d+)", str(element))
+    
+    max_pts = 0
+
+    result_str = ""
+
+    total_alteration = 0
+    total_alteration_str = []
+
+    # Add all fractions in the column
+    # It's not perfect, as patients may have both CNA and mutation, leading to
+    # an overestimate (maybe max 5-10 pts) when two values are added
+    while match_obj:
+        if max_pts < int(match_obj.group(3)):
+            max_pts = int(match_obj.group(3))
+    
+        total_alteration_str.append(
+            match_obj.group(2) + " " + match_obj.group(1))
+
+        total_alteration += int(match_obj.group(2))
+        # Only keep what's left after the first match in the string
+        element = element[match_obj.span()[1]:]
+
+        match_obj = re.search(r"([\w]+) in (\d+) samples out of (\d+)", str(element))
+
+    if total_alteration > 0:
+        result_str = " ".join(["Altered in", str(min(total_alteration, max_pts)) + 
+                     "/" + str(max_pts) + " samples, with", "; ".join(total_alteration_str)])
+
+    return pd.Series({"Alterations": result_str})
+
+
+Merged_MSK = Merged_MSK.apply(get_counts)
+
+# For later compatibility with R...
+Merged_MSK['Gene'] = Merged_MSK.index
+
+Merged_MSK.head(10)
+
+
+```
+
+
+
+```{r Concat df}
+concat_df <- function(df_base, df_copy, colname){
+  # Remove .xlsx at the end of the filename
+  if(grepl("\\.xlsx$", colname)){
+    colname <- gsub("\\.xlsx$", "", colname)
+  }
+  
+  
+  df_copy <- df_copy %>% 
+    select(c("Gene", "Alterations")) %>% 
+    mutate(Gene = str_trim(Gene))
+  
+  colnames(df_copy) <- c("Gene.List", colname)
+  
+  duplicated_genes <- df_copy$Gene.List[duplicated(df_copy$Gene.List)]
+  
+  # print any duplicates
+  if(!is_empty(duplicated_genes)){
+    print(c(colname, duplicated_genes))
+    print(df_copy %>% 
+            filter(Gene.List %in% duplicated_genes))
+  }
+  
+  # remove duplicates
+  df_copy <- df_copy[!duplicated(df_copy$Gene.List),]
+  
+  # Join the dfs
+  new_df <- df_base %>% 
+    full_join(df_copy, by="Gene.List")
+  
+  return(new_df)
+}
+
+```
+
+
+```{r Read_data}
+
+source_file = "SCLC Mutation Summary For Merge.xlsx"
+
+df_base <- read.xlsx(paste0(source_file))
+
+df_base$Gene.List[duplicated(df_base$Gene.List)]
+
+new_df <- concat_df(df_base, py$Merged_MSK, "MSKCC 2017 (410 patients, 428 samples)")
+
+for(filename in py$file_list){
+  print(filename)
+  copy_df <- read.xlsx(paste0(py$source_dir, filename))
+  
+  new_df <- concat_df(new_df, copy_df, filename)
+}
+
+
+# Writes an Excel file from which you can just copy over the column :)
+write.xlsx(new_df, "Merged.xlsx", overwrite = TRUE)
+
+# To be safe, use the csv output and then use Data -> Get Data in Excel to open without gene name losses (MARCH etc)
+write.csv(new_df, "Merged.csv")
+
+
+```
+
+
+```{r check duplicates}
+# 
+# changed <- df_base
+# changed$George.2015 <- new_df$`George 2015`[1:10752]
+# 
+# inner_df <- df_base %>% 
+#   left_join(df_copy, by='Gene.List')
+# 
+# changed[!is.na(changed$George.2015) & changed$George.2015 != inner_df$`George 2015`,c('Gene.List', 'George.2015')]
+# inner_df[!is.na(changed$George.2015) & changed$George.2015 != inner_df$`George 2015`,c('Gene.List', 'George.2015')]
+
+
+df_base$Gene.List[duplicated(df_base$Gene.List)]
+```
+

@@ -1,0 +1,14 @@
+1. Add manual edits to SCLC Mutation Summary for Merge.xlsx
+2. Run Database Builder.Rmd to add things from Primary Tables Notated for Concat
+3. Create SCLC Mutation Summary All.xls by using the Merge.xlsx result (copy/paste) - Remember to copy over extra gene names too from Merge.xlsx that aren't found in Summary All.xlsx and update # studies field
+4. Run SCLC_alteration_counter.py
+5. Copy over the # Patients.. etc columns from _counted file onto ...Summary All.xlsx and re-write over _counted.xlsx
+5. Grab all gene lists from SCLC Mutation All_counted.xlsx and query on UniProt DB (use GeneCards -> UniProt KB)
+6. Download the table into Primary Data Tables/UniProt on SCLC_All.xlsx (Excel, uncompressed)
+7. Run UniProt Concater.Rmd (If table isn't loading properly, shorten the first cell ("yourlist~~~" to "yourlist")
+8. Paste last two columns of Merged_Prot.xlsx to your SCLC Mutation All_counted.xlsx
+9. Might need to manually go through ones with multiple notations (e.g. HIST1H2A stuff) -> I have merged the data for genes in question when it made more sense to do so
+10. Run Expression_Merge.Rmd
+11. Paste over appropriate columns from Merged_Expression.xlsx to your All_counted_prot etc
+12. Run Depmap_Append.Rmd (select CRISPR or RNAi if you want, default CRISPR) 
+13. Paste over appropriate columns from Merged_Dependency.xlsx to your All_counted_prot
