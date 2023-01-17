@@ -1,5 +1,7 @@
 # SCLC_Tuba-seq
-Code used to generate figures and parse data in SCLC Tuba-seq manuscript
+Code used to generate figures and parse data in article titled, "A multiplexed in vivo approach to identify driver genes in small cell lung cancer." https://www.sciencedirect.com/science/article/pii/S2211124723000013?via%3Dihub
+
+Lee, M.C., Cai, H., Murray, C.W., Li, C., Shue, Y.T., Andrejka, L., He, A.L., Holzem, A.M.E., Drainas, A.P., Ko, J.H., et al. (2023). A multiplexed in vivo approach to identify driver genes in small cell lung cancer. Cell Reports 42, 111990. 10.1016/j.celrep.2023.111990.
 
 RNA-seq: Code used to analyze RNA-seq of tumor-derived cell lines in Figure 1.
 
